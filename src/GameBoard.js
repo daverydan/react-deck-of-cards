@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import "./GameBoard.css";
 import ButtonClick from "./components/ButtonClick";
@@ -7,13 +7,47 @@ import CardDeck from "./CardDeck";
 const GameBoard = () => {
   const [deckId, setDeckId] = useState(null);
   const [cards, setCards] = useState([]);
+  const [timerStatus, setTimerStatus] = useState(false);
+  const timerId = useRef();
 
   useEffect(() => {
-    (async () =>
-      await axios
-        .get("https://deckofcardsapi.com/api/deck/new/shuffle/?deck_count=1")
-        .then((res) => setDeckId(res.data.deck_id)))();
+    newDeck();
+    return stopTimer();
   }, []);
+
+  const stopTimer = () => clearInterval(timerId.current);
+
+  const newDeck = async () => {
+    await axios
+      .get("https://deckofcardsapi.com/api/deck/new/shuffle/")
+      .then((res) => setDeckId(res.data.deck_id));
+  };
+
+  const drawCard = () => {
+    if (timerStatus) {
+      stopTimer();
+      setTimerStatus(false);
+    } else {
+      setTimerStatus(true);
+      timerId.current = setInterval(async () => {
+        try {
+          let res = await axios.get(
+            `https://deckofcardsapi.com/api/deck/${deckId}/draw/`
+          );
+          if (res.data.remaining === 0) {
+            stopTimer();
+            setTimerStatus(false);
+            throw new Error("no cards remaining!");
+          }
+          const card = res.data.cards[0];
+          card.styles = generateStyles();
+          setCards((c) => [...c, card]);
+        } catch (error) {
+          alert(error);
+        }
+      }, 1000);
+    }
+  };
 
   const generateStyles = () => {
     let posNeg = Math.floor(Math.random() * 2) === 1 ? 1 : -1; // + or -
@@ -23,19 +57,21 @@ const GameBoard = () => {
     return { left, top, transform: `rotate(${num}deg)` }; // styles
   };
 
-  const drawCard = async () => {
-    await axios
-      .get(`https://deckofcardsapi.com/api/deck/${deckId}/draw/?count=1`)
-      .then((res) => {
-        res.data.cards[0].styles = generateStyles(); // + styles to card obj
-        setCards([...cards, res.data.cards[0]]);
-      })
-      .catch((e) => alert("Error: no cards remaining!"));
+  const getNewDeck = async () => {
+    await setDeckId(null);
+    await setCards([]);
+    await stopTimer();
+    await setTimerStatus(false);
+    await newDeck();
   };
 
   return (
     <div className="GameBoard">
-      <ButtonClick btnText="GIMME A CARD!" handleClick={drawCard} />
+      <ButtonClick
+        btnText={timerStatus ? "Stop Drawing" : "Start Drawing"}
+        handleClick={drawCard}
+      />
+      <ButtonClick btnText="New Deck" handleClick={getNewDeck} />
       <CardDeck cards={cards} />
     </div>
   );
